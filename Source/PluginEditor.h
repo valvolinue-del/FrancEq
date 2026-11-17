@@ -23,6 +23,22 @@ public:
     juce::Label* createSliderTextBox (juce::Slider&) override;
     juce::Font getLabelFont (juce::Label&) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
+    juce::Font getComboBoxFont (juce::ComboBox&) override;
+};
+
+class FrancKnob : public juce::Slider
+{
+public:
+    void setFrequencyWheel (bool shouldUseFrequencyWheel) { frequencyWheel = shouldUseFrequencyWheel; }
+
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+
+private:
+    void applyDragSensitivity (const juce::ModifierKeys& mods);
+    bool frequencyWheel = false;
 };
 
 class GainReductionMeter : public juce::Component,
@@ -47,15 +63,30 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void refreshForSnapshot();
+    juce::String layoutProblems() const;
 
 private:
+    class InterfaceCanvas : public juce::Component
+    {
+    public:
+        explicit InterfaceCanvas (FrancEqAudioProcessorEditor& ownerIn);
+        void paint (juce::Graphics&) override;
+        void resized() override;
+
+    private:
+        FrancEqAudioProcessorEditor& owner;
+    };
+
     void timerCallback() override;
-    void configureKnob (juce::Slider& slider);
+    void paintInterface (juce::Graphics&);
+    void layoutDesign();
+    void configureKnob (FrancKnob& slider, bool frequencyWheel);
     void configureLabel (juce::Label& label, const juce::String& text);
     void configureChoiceButton (juce::TextButton& button);
     void selectBand (int index);
     void syncCharacterButtons();
     void rebuildBandAttachments();
+    void fitSliderText (FrancKnob& slider);
 
     FrancEqAudioProcessor& processor;
     FrancLookAndFeel lookAndFeel;
@@ -88,18 +119,18 @@ private:
 
     juce::TextButton characterButtons[4];
     juce::TextButton bandButtons[franceq::bandCount];
-    juce::Slider inputSlider;
-    juce::Slider outputSlider;
-    juce::Slider freqSlider;
-    juce::Slider gainSlider;
-    juce::Slider qSlider;
-    juce::Slider thresholdSlider;
-    juce::Slider ratioSlider;
-    juce::Slider attackSlider;
-    juce::Slider releaseSlider;
-    juce::Slider kneeSlider;
-    juce::Slider makeupSlider;
-    juce::Slider mixSlider;
+    FrancKnob inputSlider;
+    FrancKnob outputSlider;
+    FrancKnob freqSlider;
+    FrancKnob gainSlider;
+    FrancKnob qSlider;
+    FrancKnob thresholdSlider;
+    FrancKnob ratioSlider;
+    FrancKnob attackSlider;
+    FrancKnob releaseSlider;
+    FrancKnob kneeSlider;
+    FrancKnob makeupSlider;
+    FrancKnob mixSlider;
     juce::ToggleButton bypassButton;
     juce::ToggleButton enableButton;
     juce::ToggleButton compEnable;
@@ -128,11 +159,16 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> makeupAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
 
+    InterfaceCanvas canvas;
     juce::Rectangle<int> titleBounds;
     juce::Rectangle<int> railBounds;
     juce::Rectangle<int> bandBounds;
     juce::Rectangle<int> compBounds;
     int selectedBand = 3;
+    bool editorReady = false;
+
+    static constexpr int designWidth = FrancEqAudioProcessor::defaultEditorWidth;
+    static constexpr int designHeight = FrancEqAudioProcessor::defaultEditorHeight;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FrancEqAudioProcessorEditor)
 };

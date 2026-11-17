@@ -4,7 +4,9 @@ FrancEq is a parametric EQ and compressor (VST3 and Standalone) built with JUCE 
 
 Seven bands cover bell, low shelf, high shelf, low cut, high cut, and notch. Cuts can be 12, 24, or 48 dB/oct. Frequency, gain, and Q are smoothed, and the biquad coefficients are rebuilt from those smoothed values, so moving a control does not zipper. A character control changes the curve shape and adds a gently oversampled saturation stage. The compressor follows the EQ by default and can be moved in front of it.
 
-The editor draws the combined response in gold, a faint curve for each band, and a real-time spectrum behind them. Drag a node to change frequency and gain, scroll to change Q, and double-click to reset a moved gain or to toggle the band. The display reads a lock-free ring written by the audio thread and repaints at 60 Hz.
+The editor draws the combined response in gold, a faint curve for each band, and a real-time spectrum behind them. Drag a node to change frequency and gain. Scroll vertically on a node to change bandwidth: the full Q range, wide to narrow, takes about six wheel steps, and Shift or Cmd makes that ten times finer. Scroll sideways on a node, or scroll the frequency knob, to move about a sixth of an octave per step. The Q knob's own scroll is unchanged. Double-click a node to reset a moved gain or to toggle the band, and double-click a knob to return it to its default. The display reads a lock-free ring written by the audio thread and repaints at 60 Hz.
+
+The window is freely resizable in a host and in the standalone app, from 640×400 to 1800×1150, and opens at 1120×700. The last size is stored in the plug-in state. The interface is drawn at that default size and scaled to fit, so the graph, bands, compressor, meters, and labels keep their spacing.
 
 BRIT N, BRIT S, and US A are inspired by classic Neve, SSL, and API console EQ character. Neve, SSL, and API are trademarks of their owners. FrancEq is not affiliated with, endorsed by, or associated with those companies.
 
@@ -108,6 +110,7 @@ The plug-in is not copied into the system plug-in folders automatically.
 cmake --build build --config Release --target FrancEqSanity
 ./build/FrancEqSanity_artefacts/Release/FrancEqSanity
 ./build/FrancEqSanity_artefacts/Release/FrancEqSanity --snapshot /tmp/franceq-ui.png
+./build/FrancEqSanity_artefacts/Release/FrancEqSanity --gallery /tmp/franceq-ui
 ```
 
 Pass `-DFRANCEQ_BUILD_TESTS=OFF` to skip that target. The snapshot flag needs a display (or Xvfb) because it opens the editor offscreen.
@@ -139,6 +142,8 @@ Source/EqDisplay.h
 Source/EqDisplay.cpp
 Source/EqDesign.h
 Source/Palette.h
+Source/Wheel.h
+Resources/Icon.png
 tests/Sanity.cpp
 ```
 

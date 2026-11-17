@@ -981,17 +981,53 @@ void FrancEqAudioProcessor::copyAnalyser (float* pre, float* post, int numSample
     }
 }
 
+void FrancEqAudioProcessor::setEditorSize (int width, int height)
+{
+    editorWidth.store (juce::jlimit (minEditorWidth, maxEditorWidth, width));
+    editorHeight.store (juce::jlimit (minEditorHeight, maxEditorHeight, height));
+}
+
 void FrancEqAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (const auto xml = apvts.copyState().createXml())
+    auto state = apvts.copyState();
+    state.setProperty ("editorWidth", editorWidth.load(), nullptr);
+    state.setProperty ("editorHeight", editorHeight.load(), nullptr);
+
+    if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
 void FrancEqAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (const auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
         if (xml->hasTagName (apvts.state.getType()))
-            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        {
+            auto state = juce::ValueTree::fromXml (*xml);
+            setEditorSize ((int) state.getProperty ("editorWidth", editorWidth.load()),
+                           (int) state.getProperty ("editorHeight", editorHeight.load()));
+            apvts.replaceState (state);
+
+            if (auto* editor = getActiveEditor())
+            {
+                const int width = getEditorWidth();
+                const int height = getEditorHeight();
+                auto apply = [safe = juce::Component::SafePointer<juce::AudioProcessorEditor> (editor), width, height]
+                {
+                    if (safe != nullptr)
+                        safe->setSize (width, height);
+                };
+
+                if (auto* manager = juce::MessageManager::getInstanceWithoutCreating())
+                {
+                    if (manager->isThisTheMessageThread())
+                        apply();
+                    else
+                        juce::MessageManager::callAsync (std::move (apply));
+                }
+            }
+        }
+    }
 }
 
 juce::AudioProcessorEditor* FrancEqAudioProcessor::createEditor()

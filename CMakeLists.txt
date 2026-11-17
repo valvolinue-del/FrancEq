@@ -46,7 +46,9 @@ juce_add_plugin(FrancEq
     PLUGIN_CODE FrEq
     FORMATS VST3 Standalone
     PRODUCT_NAME "FrancEq"
-    VST3_CATEGORIES "EQ" "Dynamics" "Analyzer" "Fx")
+    VST3_CATEGORIES "EQ" "Dynamics" "Analyzer" "Fx"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Icon.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Icon.png")
 
 target_sources(FrancEq
     PRIVATE
@@ -57,7 +59,8 @@ target_sources(FrancEq
         Source/EqDisplay.cpp
         Source/EqDisplay.h
         Source/EqDesign.h
-        Source/Palette.h)
+        Source/Palette.h
+        Source/Wheel.h)
 
 target_compile_features(FrancEq PRIVATE cxx_std_20)
 set_target_properties(FrancEq PROPERTIES

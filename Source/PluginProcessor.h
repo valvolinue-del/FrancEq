@@ -73,6 +73,17 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    static constexpr int defaultEditorWidth = 1120;
+    static constexpr int defaultEditorHeight = 700;
+    static constexpr int minEditorWidth = 640;
+    static constexpr int minEditorHeight = 400;
+    static constexpr int maxEditorWidth = 1800;
+    static constexpr int maxEditorHeight = 1150;
+
+    int getEditorWidth() const noexcept { return editorWidth.load(); }
+    int getEditorHeight() const noexcept { return editorHeight.load(); }
+    void setEditorSize (int width, int height);
+
     float getGainReductionDb() const noexcept
     {
         return gainReductionDb.load (std::memory_order_relaxed);
@@ -284,6 +295,8 @@ private:
     int maxBlock = 0;
     int latencySamples = 0;
     double currentSampleRate = 0.0;
+    std::atomic<int> editorWidth { defaultEditorWidth };
+    std::atomic<int> editorHeight { defaultEditorHeight };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FrancEqAudioProcessor)
 };
