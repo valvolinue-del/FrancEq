@@ -1,8 +1,10 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "Wheel.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -382,6 +384,57 @@ int runTests()
         }
     }
 
+    {
+        expect (std::abs (franceq::frequencyAfterNotches (440.0f, 6.0f) - 880.0f) < 0.05f,
+                "six frequency notches are one octave");
+        expect (std::abs (franceq::frequencyAfterNotches (1000.0f, 1.0f) / 1000.0f - std::pow (2.0f, 1.0f / 6.0f)) < 1.0e-4f,
+                "one frequency notch is a sixth of an octave");
+        expect (std::abs (franceq::frequencyAfterNotches (1000.0f, 0.1f) / 1000.0f - std::pow (2.0f, 0.1f / 6.0f)) < 1.0e-4f,
+                "fine frequency notches are a tenth of a coarse step");
+
+        float proportion = 0.0f;
+        for (int notch = 0; notch < 6; ++notch)
+            proportion = franceq::proportionAfterNotches (proportion, 1.0f, franceq::bandWheelNotches);
+        expect (std::abs (proportion - 1.0f) < 1.0e-4f, "six bandwidth notches cover the Q range");
+
+        juce::MouseWheelDetails discrete {};
+        discrete.deltaY = 0.039f;
+        discrete.isSmooth = false;
+        expect (std::abs (franceq::notchesFromWheel (discrete) - 1.0f) < 1.0e-4f, "a small mouse click is one notch");
+
+        juce::MouseWheelDetails smooth {};
+        smooth.deltaY = 0.05f;
+        smooth.isSmooth = true;
+        expect (std::abs (franceq::notchesFromWheel (smooth) - 0.25f) < 1.0e-4f, "trackpad deltas add up in notch units");
+
+        FrancEqAudioProcessor processor;
+        auto* q = dynamic_cast<juce::RangedAudioParameter*> (processor.apvts.getParameter (ParamIDs::bandQ (3)));
+        const float start = 0.71f;
+        const float next = q->convertFrom0to1 (franceq::proportionAfterNotches (q->convertTo0to1 (start), 1.0f, franceq::bandWheelNotches));
+        const float previous = start * std::pow (1.07f, 1.0f);
+        std::cout << "     bandwidth wheel " << start << " -> " << next << " (old step " << previous << ")\n";
+        expect (next > previous * 1.4f, "a node wheel notch changes bandwidth much faster than the old 7 percent step");
+        expect (next < 4.0f, "one bandwidth notch does not jump the whole Q range");
+    }
+
+    {
+        FrancEqAudioProcessor processor;
+        processor.setEditorSize (1500, 980);
+        juce::MemoryBlock state;
+        processor.getStateInformation (state);
+        processor.setEditorSize (FrancEqAudioProcessor::defaultEditorWidth, FrancEqAudioProcessor::defaultEditorHeight);
+        processor.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
+        expect (processor.getEditorWidth() == 1500 && processor.getEditorHeight() == 980, "plugin state keeps the editor size");
+        processor.setEditorSize (20, 20);
+        expect (processor.getEditorWidth() == FrancEqAudioProcessor::minEditorWidth
+                    && processor.getEditorHeight() == FrancEqAudioProcessor::minEditorHeight,
+                "editor size clamps to the minimum");
+        processor.setEditorSize (4000, 4000);
+        expect (processor.getEditorWidth() == FrancEqAudioProcessor::maxEditorWidth
+                    && processor.getEditorHeight() == FrancEqAudioProcessor::maxEditorHeight,
+                "editor size clamps to the maximum");
+    }
+
     if (failures == 0)
         std::cout << "All sanity checks passed.\n";
     else
@@ -390,7 +443,7 @@ int runTests()
     return failures == 0 ? 0 : 1;
 }
 
-int renderSnapshot (const char* path)
+int renderSnapshot (const char* path, int width, int height)
 {
     juce::ScopedJuceInitialiser_GUI gui;
     FrancEqAudioProcessor processor;
@@ -443,10 +496,40 @@ int renderSnapshot (const char* path)
 
     render (processor, input, 48000.0, 256, 2);
 
+    if (width == FrancEqAudioProcessor::minEditorWidth && height == FrancEqAudioProcessor::minEditorHeight)
+    {
+        FrancEqAudioProcessor restored;
+        auto* open = restored.createEditorAndMakeActive();
+        expect (open != nullptr
+                    && open->getWidth() == FrancEqAudioProcessor::defaultEditorWidth
+                    && open->getHeight() == FrancEqAudioProcessor::defaultEditorHeight,
+                "a new editor opens at the default size");
+
+        restored.setEditorSize (1500, 960);
+        juce::MemoryBlock block;
+        restored.getStateInformation (block);
+        open->setSize (FrancEqAudioProcessor::defaultEditorWidth, FrancEqAudioProcessor::defaultEditorHeight);
+        restored.setEditorSize (FrancEqAudioProcessor::defaultEditorWidth, FrancEqAudioProcessor::defaultEditorHeight);
+        restored.setStateInformation (block.getData(), static_cast<int> (block.getSize()));
+        expect (open->getWidth() == 1500 && open->getHeight() == 960,
+                "an open editor follows the size stored in the plug-in state");
+        restored.editorBeingDeleted (open);
+        delete open;
+        if (failures != 0)
+            return 4;
+    }
+
     auto editor = std::unique_ptr<juce::AudioProcessorEditor> (processor.createEditor());
-    editor->setSize (1280, 860);
+    editor->setSize (width, height);
     if (auto* france = dynamic_cast<FrancEqAudioProcessorEditor*> (editor.get()))
     {
+        const auto problems = france->layoutProblems();
+        if (problems.isNotEmpty())
+        {
+            std::cerr << "Layout at " << width << "x" << height << ": " << problems << "\n";
+            return 3;
+        }
+
         france->refreshForSnapshot();
         france->resized();
     }
@@ -477,12 +560,36 @@ int main (int argc, char** argv)
 {
     const int result = runTests();
     const char* snapshot = nullptr;
+    const char* gallery = nullptr;
+    int width = FrancEqAudioProcessor::defaultEditorWidth;
+    int height = FrancEqAudioProcessor::defaultEditorHeight;
+
     for (int index = 1; index < argc; ++index)
+    {
         if (std::strcmp (argv[index], "--snapshot") == 0 && index + 1 < argc)
             snapshot = argv[++index];
+        else if (std::strcmp (argv[index], "--gallery") == 0 && index + 1 < argc)
+            gallery = argv[++index];
+        else if (std::strcmp (argv[index], "--width") == 0 && index + 1 < argc)
+            width = std::atoi (argv[++index]);
+        else if (std::strcmp (argv[index], "--height") == 0 && index + 1 < argc)
+            height = std::atoi (argv[++index]);
+    }
+
+    if (gallery != nullptr)
+    {
+        const int sizes[][2] = { { 640, 400 }, { 1120, 700 }, { 1800, 1150 } };
+        const char* names[] = { "franceq-640x400.png", "franceq-1120x700.png", "franceq-1800x1150.png" };
+        for (int index = 0; index < 3; ++index)
+        {
+            const auto file = juce::File (gallery).getChildFile (names[index]);
+            if (renderSnapshot (file.getFullPathName().toRawUTF8(), sizes[index][0], sizes[index][1]) != 0)
+                return 2;
+        }
+    }
 
     if (snapshot != nullptr)
-        return renderSnapshot (snapshot) == 0 ? result : 2;
+        return renderSnapshot (snapshot, width, height) == 0 ? result : 2;
 
     return result;
 }

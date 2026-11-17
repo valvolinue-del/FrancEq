@@ -1,6 +1,7 @@
 #include "EqDisplay.h"
 
 #include "Palette.h"
+#include "Wheel.h"
 
 #include <algorithm>
 #include <cmath>
@@ -409,25 +410,31 @@ void EqDisplay::mouseWheelMove (const juce::MouseEvent& event, const juce::Mouse
     if (band < 0)
         return;
 
-    float delta = std::abs (wheel.deltaY) > std::abs (wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
-    if (wheel.isReversed)
-        delta = -delta;
-    if (std::abs (delta) < 1.0e-4f)
+    float notches = franceq::notchesFromWheel (wheel);
+    if (std::abs (notches) < 1.0e-5f)
+        return;
+    if (franceq::wheelIsFine (event.mods))
+        notches *= franceq::wheelFineFactor;
+
+    const bool frequencyAxis = franceq::wheelIsHorizontal (wheel);
+    auto* parameterToEdit = parameter (frequencyAxis ? ParamIDs::bandFreq (band) : ParamIDs::bandQ (band));
+    if (parameterToEdit == nullptr)
         return;
 
-    delta = juce::jlimit (-3.0f, 3.0f, delta);
-    const float q = juce::jlimit (0.1f, 10.0f, rawValue (ParamIDs::bandQ (band)) * std::pow (1.07f, delta));
-    auto* qParameter = parameter (ParamIDs::bandQ (band));
-    if (qParameter == nullptr)
-        return;
+    const float current = rawValue (frequencyAxis ? ParamIDs::bandFreq (band) : ParamIDs::bandQ (band));
+    const float next = frequencyAxis
+                         ? franceq::frequencyAfterNotches (current, notches)
+                         : parameterToEdit->convertFrom0to1 (franceq::proportionAfterNotches (
+                               parameterToEdit->convertTo0to1 (current), notches, franceq::bandWheelNotches));
 
     setSelectedBand (band);
     if (onSelectBand != nullptr)
         onSelectBand (band);
 
-    qParameter->beginChangeGesture();
-    setRaw (qParameter, q);
-    qParameter->endChangeGesture();
+    parameterToEdit->beginChangeGesture();
+    setRaw (parameterToEdit, next);
+    parameterToEdit->endChangeGesture();
+    refresh();
 }
 
 void EqDisplay::paint (juce::Graphics& g)

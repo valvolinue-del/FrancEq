@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "Wheel.h"
 
 #include <algorithm>
 
@@ -188,9 +189,83 @@ juce::Font FrancLookAndFeel::getLabelFont (juce::Label&)
     return juce::Font (juce::FontOptions (12.5f));
 }
 
-juce::Font FrancLookAndFeel::getTextButtonFont (juce::TextButton&, int)
+juce::Font FrancLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
 {
-    return juce::Font (juce::FontOptions (12.0f).withKerningFactor (0.08f));
+    const float size = juce::jlimit (10.0f, 15.0f, buttonHeight * 0.46f);
+    return juce::Font (juce::FontOptions (size).withKerningFactor (0.06f));
+}
+
+juce::Font FrancLookAndFeel::getComboBoxFont (juce::ComboBox& box)
+{
+    const float size = juce::jlimit (11.0f, 16.0f, box.getHeight() * 0.46f);
+    return juce::Font (juce::FontOptions (size));
+}
+
+void FrancKnob::applyDragSensitivity (const juce::ModifierKeys& mods)
+{
+    setMouseDragSensitivity (franceq::wheelIsFine (mods) ? 2200 : 250);
+}
+
+void FrancKnob::mouseDown (const juce::MouseEvent& event)
+{
+    applyDragSensitivity (event.mods);
+    juce::Slider::mouseDown (event);
+}
+
+void FrancKnob::mouseDrag (const juce::MouseEvent& event)
+{
+    applyDragSensitivity (event.mods);
+    juce::Slider::mouseDrag (event);
+}
+
+void FrancKnob::mouseUp (const juce::MouseEvent& event)
+{
+    setMouseDragSensitivity (250);
+    juce::Slider::mouseUp (event);
+}
+
+void FrancKnob::mouseWheelMove (const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
+{
+    if (! frequencyWheel)
+    {
+        juce::Slider::mouseWheelMove (event, wheel);
+        return;
+    }
+
+    const float notches = franceq::notchesFromWheel (wheel)
+                        * (franceq::wheelIsFine (event.mods) ? franceq::wheelFineFactor : 1.0f);
+    if (std::abs (notches) < 1.0e-6f)
+        return;
+
+    const float current = static_cast<float> (getValue());
+    const float next = franceq::frequencyAfterNotches (current, notches);
+    const double currentPos = valueToProportionOfLength (current);
+    const double nextPos = valueToProportionOfLength (next);
+    const double proportionDelta = nextPos - currentPos;
+    if (std::abs (proportionDelta) < 1.0e-6)
+        return;
+
+    // Hand the step to the slider so the gesture, text box, and popup match a normal wheel.
+    juce::MouseWheelDetails synthetic;
+    synthetic.deltaY = static_cast<float> (proportionDelta / franceq::sliderWheelProportion);
+    synthetic.isSmooth = true;
+    juce::Slider::mouseWheelMove (event, synthetic);
+}
+
+FrancEqAudioProcessorEditor::InterfaceCanvas::InterfaceCanvas (FrancEqAudioProcessorEditor& ownerIn)
+    : owner (ownerIn)
+{
+    setOpaque (true);
+}
+
+void FrancEqAudioProcessorEditor::InterfaceCanvas::paint (juce::Graphics& g)
+{
+    owner.paintInterface (g);
+}
+
+void FrancEqAudioProcessorEditor::InterfaceCanvas::resized()
+{
+    owner.layoutDesign();
 }
 
 GainReductionMeter::GainReductionMeter (FrancEqAudioProcessor& processorIn)
@@ -229,14 +304,16 @@ FrancEqAudioProcessorEditor::FrancEqAudioProcessorEditor (FrancEqAudioProcessor&
       processor (processorIn),
       display (processorIn),
       meter (processorIn),
-      tooltipWindow (this, 700)
+      tooltipWindow (this, 700),
+      canvas (*this)
 {
     setLookAndFeel (&lookAndFeel);
     tooltipWindow.setColour (juce::TooltipWindow::backgroundColourId, franc::panelRaised);
     tooltipWindow.setColour (juce::TooltipWindow::textColourId, franc::ivory);
     tooltipWindow.setColour (juce::TooltipWindow::outlineColourId, franc::gold);
 
-    addAndMakeVisible (display);
+    addAndMakeVisible (canvas);
+    canvas.addAndMakeVisible (display);
     display.onSelectBand = [this] (int index) { selectBand (index); };
 
     configureLabel (characterLabel, "CHARACTER");
@@ -297,24 +374,24 @@ FrancEqAudioProcessorEditor::FrancEqAudioProcessorEditor (FrancEqAudioProcessor&
         bandButtons[band].onClick = [this, band] { selectBand (band); };
     }
 
-    configureKnob (inputSlider);
-    configureKnob (outputSlider);
-    configureKnob (freqSlider);
-    configureKnob (gainSlider);
-    configureKnob (qSlider);
-    configureKnob (thresholdSlider);
-    configureKnob (ratioSlider);
-    configureKnob (attackSlider);
-    configureKnob (releaseSlider);
-    configureKnob (kneeSlider);
-    configureKnob (makeupSlider);
-    configureKnob (mixSlider);
+    configureKnob (inputSlider, false);
+    configureKnob (outputSlider, false);
+    configureKnob (freqSlider, true);
+    configureKnob (gainSlider, false);
+    configureKnob (qSlider, false);
+    configureKnob (thresholdSlider, false);
+    configureKnob (ratioSlider, false);
+    configureKnob (attackSlider, false);
+    configureKnob (releaseSlider, false);
+    configureKnob (kneeSlider, false);
+    configureKnob (makeupSlider, false);
+    configureKnob (mixSlider, false);
 
     inputSlider.setTooltip ("Gain in front of the EQ.");
     outputSlider.setTooltip ("Gain after the EQ and compressor.");
-    freqSlider.setTooltip ("Band frequency, from 20 Hz to 20 kHz.");
-    gainSlider.setTooltip ("Band gain. Cuts ignore gain. Notch depth follows negative gain.");
-    qSlider.setTooltip ("Bandwidth. Scroll on a node to change it, or drag a cut vertically.");
+    freqSlider.setTooltip ("Band frequency, from 20 Hz to 20 kHz. Each scroll step is about a sixth of an octave. Shift or Cmd is fine.");
+    gainSlider.setTooltip ("Band gain. Cuts ignore gain. Notch depth follows negative gain. Double-click resets.");
+    qSlider.setTooltip ("Bandwidth. The knob's scroll is unchanged. Scroll a node to move from wide to narrow in a few steps. Shift or Cmd is fine.");
     thresholdSlider.setTooltip ("Level where the compressor starts to work.");
     ratioSlider.setTooltip ("How hard the compressor turns the signal down.");
     attackSlider.setTooltip ("How quickly the compressor reacts.");
@@ -331,11 +408,11 @@ FrancEqAudioProcessorEditor::FrancEqAudioProcessorEditor (FrancEqAudioProcessor&
     compEnable.setTooltip ("Enable the compressor.");
     autoButton.setClickingTogglesState (true);
     autoButton.setTooltip ("Add a rough makeup gain from the threshold and ratio.");
-    addAndMakeVisible (bypassButton);
-    addAndMakeVisible (enableButton);
-    addAndMakeVisible (compEnable);
-    addAndMakeVisible (autoButton);
-    addAndMakeVisible (meter);
+    canvas.addAndMakeVisible (bypassButton);
+    canvas.addAndMakeVisible (enableButton);
+    canvas.addAndMakeVisible (compEnable);
+    canvas.addAndMakeVisible (autoButton);
+    canvas.addAndMakeVisible (meter);
 
     typeBox.addItemList (juce::StringArray { "Bell", "Low Shelf", "High Shelf", "Low Cut", "High Cut", "Notch" }, 1);
     slopeBox.addItemList (juce::StringArray { "12 dB/oct", "24 dB/oct", "48 dB/oct" }, 1);
@@ -346,7 +423,7 @@ FrancEqAudioProcessorEditor::FrancEqAudioProcessorEditor (FrancEqAudioProcessor&
     for (auto* box : { &typeBox, &slopeBox, &positionBox })
     {
         box->setScrollWheelEnabled (false);
-        addAndMakeVisible (box);
+        canvas.addAndMakeVisible (box);
     }
 
     inputAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (processor.apvts, ParamIDs::inputGain, inputSlider);
@@ -368,8 +445,12 @@ FrancEqAudioProcessorEditor::FrancEqAudioProcessorEditor (FrancEqAudioProcessor&
     startTimerHz (30);
 
     setResizable (true, true);
-    setResizeLimits (1100, 720, 1800, 1200);
-    setSize (1280, 860);
+    setResizeLimits (FrancEqAudioProcessor::minEditorWidth,
+                     FrancEqAudioProcessor::minEditorHeight,
+                     FrancEqAudioProcessor::maxEditorWidth,
+                     FrancEqAudioProcessor::maxEditorHeight);
+    setSize (processor.getEditorWidth(), processor.getEditorHeight());
+    editorReady = true;
 }
 
 FrancEqAudioProcessorEditor::~FrancEqAudioProcessorEditor()
@@ -377,17 +458,26 @@ FrancEqAudioProcessorEditor::~FrancEqAudioProcessorEditor()
     setLookAndFeel (nullptr);
 }
 
-void FrancEqAudioProcessorEditor::configureKnob (juce::Slider& slider)
+void FrancEqAudioProcessorEditor::configureKnob (FrancKnob& slider, bool frequencyWheel)
 {
+    slider.setFrequencyWheel (frequencyWheel);
     slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 18);
+    slider.setPopupDisplayEnabled (true, false, this);
     slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.2f,
                                 juce::MathConstants<float>::pi * 2.8f,
                                 true);
     slider.setColour (juce::Slider::textBoxTextColourId, franc::ivory);
     slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
-    addAndMakeVisible (slider);
+    canvas.addAndMakeVisible (slider);
+}
+
+void FrancEqAudioProcessorEditor::fitSliderText (FrancKnob& slider)
+{
+    const int width = juce::jlimit (44, 92, slider.getWidth() - 4);
+    const int height = juce::jlimit (14, 20, slider.getHeight() / 5);
+    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, width, height);
 }
 
 void FrancEqAudioProcessorEditor::configureLabel (juce::Label& label, const juce::String& text)
@@ -397,7 +487,7 @@ void FrancEqAudioProcessorEditor::configureLabel (juce::Label& label, const juce
     label.setFont (juce::Font (juce::FontOptions (11.0f).withKerningFactor (0.12f)));
     label.setColour (juce::Label::textColourId, franc::gold);
     label.setInterceptsMouseClicks (false, false);
-    addAndMakeVisible (label);
+    canvas.addAndMakeVisible (label);
 }
 
 void FrancEqAudioProcessorEditor::configureChoiceButton (juce::TextButton& button)
@@ -406,7 +496,7 @@ void FrancEqAudioProcessorEditor::configureChoiceButton (juce::TextButton& butto
     button.setColour (juce::TextButton::buttonOnColourId, franc::gold);
     button.setColour (juce::TextButton::textColourOffId, franc::gold);
     button.setColour (juce::TextButton::textColourOnId, franc::background);
-    addAndMakeVisible (button);
+    canvas.addAndMakeVisible (button);
 }
 
 void FrancEqAudioProcessorEditor::selectBand (int index)
@@ -464,16 +554,21 @@ void FrancEqAudioProcessorEditor::refreshForSnapshot()
 void FrancEqAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (franc::background);
+}
 
-    juce::ColourGradient glow (franc::gold.withAlpha (0.09f), static_cast<float> (getWidth()) * 0.5f, 28.0f,
-                               franc::background, static_cast<float> (getWidth()) * 0.5f, 260.0f, true);
+void FrancEqAudioProcessorEditor::paintInterface (juce::Graphics& g)
+{
+    g.fillAll (franc::background);
+
+    juce::ColourGradient glow (franc::gold.withAlpha (0.09f), static_cast<float> (canvas.getWidth()) * 0.5f, 28.0f,
+                               franc::background, static_cast<float> (canvas.getWidth()) * 0.5f, 260.0f, true);
     g.setGradientFill (glow);
-    g.fillRect (getLocalBounds());
+    g.fillRect (canvas.getLocalBounds());
 
     if (! titleBounds.isEmpty())
     {
         auto title = titleBounds.toFloat();
-        auto rule = title.removeFromTop (16.0f);
+        auto rule = title.removeFromTop (14.0f);
         const float centreX = rule.getCentreX();
         g.setColour (franc::gold.withAlpha (0.75f));
         g.drawLine (rule.getX() + 40.0f, rule.getCentreY(), centreX - 14.0f, rule.getCentreY(), 1.0f);
@@ -489,8 +584,8 @@ void FrancEqAudioProcessorEditor::paint (juce::Graphics& g)
         g.setColour (franc::gold);
         g.fillPath (diamond);
 
-        const juce::Font titleFont (juce::FontOptions (34.0f, juce::Font::bold).withKerningFactor (0.045f));
-        drawTrackedText (g, "FrancEq", title.removeFromTop (40.0f), titleFont, franc::gold, 1.4f);
+        const juce::Font titleFont (juce::FontOptions (32.0f, juce::Font::bold).withKerningFactor (0.045f));
+        drawTrackedText (g, "FrancEq", title.removeFromTop (36.0f), titleFont, franc::gold, 1.4f);
 
         const juce::Font subtitleFont (juce::FontOptions (11.0f).withKerningFactor (0.18f));
         drawTrackedText (g, "PARAMETRIC EQ", title, subtitleFont, franc::muted, 2.2f);
@@ -517,17 +612,38 @@ void FrancEqAudioProcessorEditor::resized()
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
 
-    auto area = getLocalBounds().reduced (18, 12);
-    titleBounds = area.removeFromTop (62);
+    const float scale = juce::jmin (static_cast<float> (getWidth()) / static_cast<float> (designWidth),
+                                     static_cast<float> (getHeight()) / static_cast<float> (designHeight));
+    const float scaledW = static_cast<float> (designWidth) * scale;
+    const float scaledH = static_cast<float> (designHeight) * scale;
+    const float offsetX = (static_cast<float> (getWidth()) - scaledW) * 0.5f;
+    const float offsetY = (static_cast<float> (getHeight()) - scaledH) * 0.5f;
+
+    canvas.setTransform (juce::AffineTransform::scale (scale).translated (offsetX, offsetY));
+    canvas.setBounds (0, 0, designWidth, designHeight);
+
+    // setResizeLimits can clamp a not-yet-sized editor to the minimum before the
+    // saved size is applied. Ignore that pass so it does not overwrite plugin state.
+    if (editorReady)
+        processor.setEditorSize (getWidth(), getHeight());
+}
+
+void FrancEqAudioProcessorEditor::layoutDesign()
+{
+    if (canvas.getWidth() <= 0 || canvas.getHeight() <= 0)
+        return;
+
+    auto area = canvas.getLocalBounds().reduced (16, 10);
+    titleBounds = area.removeFromTop (76);
     area.removeFromTop (6);
 
-    auto rail = area.removeFromRight (200);
-    area.removeFromRight (10);
+    auto rail = area.removeFromRight (176);
+    area.removeFromRight (8);
     railBounds = rail;
 
-    compBounds = area.removeFromBottom (132);
+    compBounds = area.removeFromBottom (128);
     area.removeFromBottom (8);
-    bandBounds = area.removeFromBottom (146);
+    bandBounds = area.removeFromBottom (140);
     area.removeFromBottom (8);
     display.setBounds (area);
 
@@ -603,4 +719,65 @@ void FrancEqAudioProcessorEditor::resized()
         compLabels[index]->setBounds (knob.removeFromTop (16));
         compSliders[index]->setBounds (knob);
     }
+
+    for (auto* slider : { &inputSlider, &outputSlider, &freqSlider, &gainSlider, &qSlider,
+                          &thresholdSlider, &ratioSlider, &attackSlider, &releaseSlider,
+                          &kneeSlider, &makeupSlider, &mixSlider })
+        fitSliderText (*slider);
+}
+
+juce::String FrancEqAudioProcessorEditor::layoutProblems() const
+{
+    juce::String problems;
+    const auto window = getLocalBounds().toFloat();
+    const auto visual = canvas.getBounds().toFloat().transformedBy (canvas.getTransform());
+
+    if (visual.getWidth() < 8.0f || visual.getHeight() < 8.0f)
+        problems << "scaled interface has no area; ";
+    if (visual.getX() < -1.5f || visual.getY() < -1.5f
+        || visual.getRight() > window.getRight() + 1.5f
+        || visual.getBottom() > window.getBottom() + 1.5f)
+        problems << "scaled interface sits outside the window; ";
+
+    const auto canvasBounds = canvas.getLocalBounds();
+    const juce::Rectangle<int> panels[] = { titleBounds, railBounds, bandBounds, compBounds, display.getBounds() };
+    for (int index = 0; index < 5; ++index)
+    {
+        if (panels[index].getWidth() < 40 || panels[index].getHeight() < 24)
+            problems << "panel " << index << " is too small; ";
+        if (! canvasBounds.contains (panels[index]))
+            problems << "panel " << index << " leaves the interface; ";
+        for (int other = index + 1; other < 5; ++other)
+            if (panels[index].intersects (panels[other]))
+                problems << "panels " << index << " and " << other << " overlap; ";
+    }
+
+    juce::Array<const juce::Component*> controls;
+    for (auto& button : characterButtons)
+        controls.add (&button);
+    for (auto& button : bandButtons)
+        controls.add (&button);
+    const juce::Component* more[] = {
+        &display, &meter, &inputSlider, &outputSlider, &freqSlider, &gainSlider, &qSlider,
+        &thresholdSlider, &ratioSlider, &attackSlider, &releaseSlider, &kneeSlider,
+        &makeupSlider, &mixSlider, &bypassButton, &enableButton, &compEnable, &autoButton,
+        &typeBox, &slopeBox, &positionBox,
+    };
+    for (auto* control : more)
+        controls.add (control);
+
+    for (int index = 0; index < controls.size(); ++index)
+    {
+        const auto bounds = controls[index]->getBounds();
+        if (bounds.getWidth() < 16 || bounds.getHeight() < 16)
+            problems << "control " << index << " is clipped (" << bounds.getWidth() << "x" << bounds.getHeight() << "); ";
+        if (! canvasBounds.contains (bounds))
+            problems << "control " << index << " leaves the interface; ";
+
+        for (int other = index + 1; other < controls.size(); ++other)
+            if (bounds.intersects (controls[other]->getBounds()))
+                problems << "controls " << index << " and " << other << " overlap; ";
+    }
+
+    return problems;
 }
