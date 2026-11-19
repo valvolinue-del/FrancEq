@@ -109,6 +109,7 @@ jobs:
 
           sign_bundle "build/FrancEq_artefacts/Release/VST3/FrancEq.vst3"
           sign_bundle "build/FrancEq_artefacts/Release/Standalone/FrancEq.app"
+          sign_bundle "build/FrancEq_artefacts/Release/AU/FrancEq.component"
           security delete-keychain "$KEYCHAIN_PATH" || true
 
       - name: Package
@@ -116,6 +117,7 @@ jobs:
           set -euo pipefail
           mkdir -p package
           cp -R "build/FrancEq_artefacts/Release/VST3/FrancEq.vst3" package/
+          cp -R "build/FrancEq_artefacts/Release/AU/FrancEq.component" package/
           cp -R "build/FrancEq_artefacts/Release/Standalone/FrancEq.app" package/
           ditto -c -k --norsrc package FrancEq-macos-universal.zip
 

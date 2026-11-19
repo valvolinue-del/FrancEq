@@ -33,6 +33,11 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+set(FRANCEQ_FORMATS VST3 Standalone)
+if(APPLE)
+    list(APPEND FRANCEQ_FORMATS AU)
+endif()
+
 juce_add_plugin(FrancEq
     COMPANY_NAME "Franc Audio"
     BUNDLE_ID com.francaudio.franceq
@@ -44,7 +49,7 @@ juce_add_plugin(FrancEq
     COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE Frnc
     PLUGIN_CODE FrEq
-    FORMATS VST3 Standalone
+    FORMATS ${FRANCEQ_FORMATS}
     PRODUCT_NAME "FrancEq"
     VST3_CATEGORIES "EQ" "Dynamics" "Analyzer" "Fx"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Icon.png"
