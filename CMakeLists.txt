@@ -39,7 +39,7 @@ if(APPLE)
 endif()
 
 juce_add_plugin(FrancEq
-    COMPANY_NAME "Franc Audio"
+    COMPANY_NAME "Franc"
     BUNDLE_ID com.francaudio.franceq
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
